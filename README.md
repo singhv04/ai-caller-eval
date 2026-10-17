@@ -12,6 +12,10 @@ a report that leads with plain-English findings. Each finding links to the exact
             profile       unlock the rest
 ```
 
+**▶ Live demo (read-only): https://singhv04.github.io/ai-caller-eval/** — real evaluation results for six
+calls (two real mono calls, four synthetic dual-channel calls). Uploading and running evaluations needs a
+local install (below).
+
 **What it checks:** responsiveness and turn-taking, compliance and safety, conversation quality,
 voice and audio quality, speech recognition, listener ratings, and reliability/business.
 
@@ -115,7 +119,8 @@ web/                Single-page UI (no build step)
 config/profiles/    Evaluation profiles (agent goal, policies, knowledge base, thresholds, gates)
 docs/               Design docs, metric catalogue, framework PDF
 samples/real-calls/ Two real outbound AI-caller recordings (mono)
-scripts/            Synthetic dual-channel demo-call generator (macOS `say`)
+scripts/            Synthetic demo-call generator (macOS `say`) · static demo builder for GitHub Pages
+site/               Built read-only demo published to GitHub Pages (.github/workflows/pages.yml)
 tests/              End-to-end and provider tests (no network needed)
 ```
 
@@ -128,6 +133,16 @@ python -m voiceeval run --recordings <ids|all> --metrics <ids|preset:NAME|all> -
 python -m voiceeval metrics [--markdown]                   # list metrics and presets
 python -m voiceeval worker --concurrency 4                 # extra worker (VOICEEVAL_EXECUTOR=worker)
 ```
+
+## Updating the online demo
+
+```bash
+.venv/bin/python scripts/build_static_demo.py   # exports calls + evaluations from your local data/ into site/
+git add site && git commit -m "Update demo" && git push   # GitHub Actions publishes it to Pages
+```
+
+The builder sanitizes LLM settings and refuses to write anything that looks like an API key. The
+published demo never contains or uses a key.
 
 ## Development
 

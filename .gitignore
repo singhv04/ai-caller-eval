@@ -4,10 +4,10 @@
 !.env.example
 
 # Runtime data: DB, uploaded audio, caches, keys saved from the Settings page
-data/
+/data/
 
 # Generated demo audio (recreate with scripts/generate_demo_calls.py)
-demo_calls/
+/demo_calls/
 
 # Python / tooling
 .venv/

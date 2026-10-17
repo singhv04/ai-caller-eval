@@ -32,7 +32,21 @@ function fmt(r) {
 }
 const BAND_LABEL = { good: "On target", warn: "Watch", bad: "Issue" };
 const bandPill = (b) => (b ? `<span class="pill ${b}">${BAND_LABEL[b]}</span>` : `<span class="pill neutral">Measured</span>`);
+// Static mode (GitHub Pages demo): read pre-exported JSON instead of the live API; no writes.
+const STATIC = !!window.VOICEEVAL_STATIC;
+const READONLY_MSG = "This is a read-only demo. Install VoiceEval locally (see the GitHub repo) to evaluate your own calls.";
+const audioUrl = (id) => (STATIC ? `data/audio/${id}.mp3` : `/api/recordings/${id}/audio`);
+const exportUrl = (id) => (STATIC ? `data/runs/${id}.csv` : `/api/runs/${id}/export.csv`);
+async function staticApi(path, opts) {
+  const method = (opts.method || "GET").toUpperCase();
+  const p = path.split("?")[0];
+  if (method !== "GET" && p !== "/api/readiness") throw new Error(READONLY_MSG);
+  const res = await fetch(`data${p.replace(/^\/api/, "")}.json`);
+  if (!res.ok) throw new Error("Not available in the demo");
+  return res.json();
+}
 async function api(path, opts = {}) {
+  if (STATIC) return staticApi(path, opts);
   const res = await fetch(path, opts);
   if (!res.ok) {
     let msg = res.statusText;
@@ -468,7 +482,7 @@ async function renderReport(id) {
     <div class="page-head">
       <div><div class="small muted"><a href="#/evaluations">Evaluations</a> /</div><h1>${esc(run.name)}</h1>
         <p>${items.length} call${items.length === 1 ? "" : "s"}: ${items.map((i) => `<a href="javascript:void 0" data-call="${i.id}">${esc(i.recording_name)}</a>`).join(", ")} · Profile: ${esc(prettyProfile(run.profile))} · ${ago(run.created_at)}</p></div>
-      <div class="row"><a class="btn" href="/api/runs/${id}/export.csv">Export CSV</a><button id="rerun">Re-run</button></div>
+      <div class="row"><a class="btn" href="${exportUrl(id)}">Export CSV</a><button id="rerun">Re-run</button></div>
     </div>
     ${!fin ? `<div class="panel pad"><div class="row"><b>Evaluating… ${done} of ${run.total_items} calls done</b><span class="grow"></span><span class="muted small">Transcribing and analysing — about 1 minute per call</span></div>
       <div class="progress" style="margin-top:10px"><div style="width:${(done / Math.max(1, run.total_items)) * 100}%"></div></div></div>` : `
@@ -655,7 +669,7 @@ function timelineBlock(tl, recId) {
       <span><i style="background:var(--neutral-bg);border:1px solid var(--border-strong)"></i>Silence</span>
       <span class="grow"></span><span>Click anywhere to play from there</span>
     </div>
-    <audio controls preload="metadata" src="/api/recordings/${recId}/audio"></audio>
+    <audio controls preload="metadata" src="${audioUrl(recId)}"></audio>
   </div>`;
 }
 function bindTimeline(tl, root) {

@@ -1,0 +1,1 @@
+{"status":"ok","executor":"static demo","judge":{"available":true,"label":"OpenAI (ChatGPT)","model":"gpt-5","reason":"Read-only demo"},"asr":{"provider":"faster_whisper","configured":"auto"}}
