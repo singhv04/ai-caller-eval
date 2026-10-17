@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoiceEval</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/calls"><span class="logo"></span>VoiceEval</a>
+    <nav>
+      <a href="#/calls" data-nav="calls">Calls</a>
+      <a href="#/evaluations" data-nav="evaluations">Evaluations</a>
+      <a href="#/settings" data-nav="settings">Settings</a>
+    </nav>
+    <div id="sys-status" class="sys-status"></div>
+  </header>
+  <main id="app"></main>
+  <div id="drawer" class="drawer hidden">
+    <div class="drawer-backdrop" data-close></div>
+    <aside class="drawer-panel">
+      <button class="icon-btn drawer-close" data-close aria-label="Close">✕</button>
+      <div id="drawer-body"></div>
+    </aside>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
