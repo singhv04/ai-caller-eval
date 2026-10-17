@@ -46,7 +46,10 @@ def mean_ci(vals) -> dict:
             "ci95": [round(float(a.mean() - half), 3), round(float(a.mean() + half), 3)] if half is not None else None}
 
 
-def ev(start: float, end: float | None = None, note: str = "", **kw) -> dict:
+def ev(start: float, end: float | None = None, note: str = "", ok: bool = False, **kw) -> dict:
+    """Evidence item: a time span in the call + note. ok=True marks positive evidence (not an issue)."""
     d = {"start": round(float(start), 2), "end": round(float(end if end is not None else start), 2), "note": note}
+    if ok:
+        d["ok"] = True
     d.update(kw)
     return d

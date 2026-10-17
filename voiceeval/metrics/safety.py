@@ -143,6 +143,16 @@ class DisclosureCompliance(Metric):
     def _required(self, profile) -> list[dict]:
         return profile.get("policies.required_disclosures", []) or []
 
+    def _ev(self, ctx, did: str, turn, made: bool, why: str) -> dict:
+        label = did.replace("_", " ")
+        if made:
+            return {**ctx.turn_span(turn), "note": f"{label}: made — {why}", "ok": True}
+        # Missing disclosures have no moment of their own: point at the opening of the call, where it was due.
+        req = next((d for d in self._required(ctx.profile) if d["id"] == did), {})
+        ai = [r for r in ctx.turn_texts if r["speaker"] == "ai"][: int(req.get("within_ai_turns", 2))]
+        span = {"start": round(ai[0]["start"], 2), "end": round(ai[-1]["end"], 2)} if ai else {}
+        return {**span, "note": f"{label}: MISSING — should have been said in the AI's opening turns. {why}"}
+
     def judge_section(self, profile):
         req = self._required(profile)
         ids = [d["id"] for d in req] or ["none"]
@@ -163,8 +173,7 @@ class DisclosureCompliance(Metric):
             made = [d for d in items if d["made_correctly"]]
             return self.ratio(len(made), len(items), method="llm_judge",
                               details={"items": j["disclosures"]},
-                              evidence=[{**ctx.turn_span(d["turn"]), "note": f"{d['id']}: {'OK' if d['made_correctly'] else 'MISSING'} — {d['explanation']}"}
-                                        for d in items])
+                              evidence=[self._ev(ctx, d["id"], d["turn"], d["made_correctly"], d["explanation"]) for d in items])
         # deterministic fallback: phrase match within the first N AI turns
         ai = _ai_turns(ctx)
         evidence, made = [], 0
@@ -173,7 +182,7 @@ class DisclosureCompliance(Metric):
             pats = [re.compile(p, re.I) for p in d.get("patterns", [])]
             hit = next((r for r in window for p in pats if p.search(r["text"])), None)
             made += hit is not None
-            evidence.append({**(ctx.turn_span(hit["index"]) if hit else {}), "note": f"{d['id']}: {'found' if hit else 'MISSING'}"})
+            evidence.append(self._ev(ctx, d["id"], hit["index"] if hit else -1, hit is not None, "phrase match"))
         return self.ratio(made, len(req), method="proxy", evidence=evidence,
                           details={"note": "Phrase matching (no LLM judge)"})
 
@@ -209,5 +218,5 @@ class EscalationHandoffSuccess(Metric):
         handled = sum(i["handled"] for i in items)
         return self.ratio(handled, len(items), method="llm_judge",
                           details={"transfer_events": len(transfer_events)},
-                          evidence=[{**ctx.turn_span(i["turn"]), "note": f"{i['trigger']}: {'handled' if i['handled'] else 'NOT handled'} — {i['explanation']}"}
-                                    for i in items])
+                          evidence=[{**ctx.turn_span(i["turn"]), "note": f"{i['trigger']}: {'handled' if i['handled'] else 'NOT handled'} — {i['explanation']}",
+                                     **({"ok": True} if i["handled"] else {})} for i in items])

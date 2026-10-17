@@ -505,7 +505,7 @@ async function renderReport(id) {
 
   app.onclick = async (e) => {
     const c = e.target.closest("[data-call]");
-    if (c) return openCallFromRun(run, c.dataset.call, c.dataset.metric);
+    if (c) return openCallFromRun(run, c.dataset.call, c.dataset.metric, c.dataset.t != null ? +c.dataset.t : undefined);
     if (e.target.id === "why-nm") return $("#not-measured").scrollIntoView({ behavior: "smooth" });
     if (e.target.id === "rerun") {
       const r2 = await post("/api/runs", { recording_ids: items.map((i) => i.recording_id), metric_ids: ids, profile: run.profile, name: run.name + " (re-run)", options: run.options });
@@ -524,8 +524,23 @@ function findingRow(id, r, items) {
   return `<div class="finding"><div class="ic ${r.band}">${r.band === "bad" ? "!" : "~"}</div>
     <div><div class="ft">${esc(m.name)}: ${fmt(r)}${m.target ? ` <span class="muted" style="font-weight:400">· target ${esc(m.target)}</span>` : ""}</div>
       <div class="fd">${esc(m.question)} ${per.length > 1 ? `Flagged in ${flagged.length} of ${per.length} calls.` : ""}</div>
-      ${ev ? `<div class="fe">e.g. <a href="javascript:void 0" data-call="${worst.it.id}" data-metric="${id}">${esc(worst.it.recording_name)}${ev.start != null ? ` at ${mmss(ev.start)}` : ""}</a> — ${esc(ev.note)}</div>` : ""}</div>
+      ${momentChips(id, items) || (ev ? `<div class="fe">${esc(worst.it.recording_name)}: ${esc(ev.note)}</div>` : "")}</div>
     <div><button class="small" data-call="${(worst || per[0])?.it.id}" data-metric="${id}">Inspect</button></div></div>`;
+}
+function momentChips(id, items) {
+  const all = [];
+  items.forEach((it) => {
+    const r = it.results?.[id];
+    if (r?.status !== "ok" || !["bad", "warn"].includes(r.band)) return;
+    mergeEvidence((r.evidence || []).filter((e) => !e.ok && e.start != null))
+      .forEach((e) => all.push({ it, e, band: r.band }));
+  });
+  if (!all.length) return "";
+  const multi = new Set(all.map((x) => x.it.id)).size > 1, LIMIT = 8;
+  const chip = ({ it, e, band }) => `<button class="mchip ${band}" data-call="${it.id}" data-metric="${id}" data-t="${e.start}" title="${esc(e.note)}">▶ ${multi ? esc(short(it.recording_name)) + " " : ""}${mmss(e.start)}</button>`;
+  return `<div class="fe"><span class="muted">${all.length} moment${all.length > 1 ? "s" : ""} — click to listen:</span>
+    <div class="mchips">${all.slice(0, LIMIT).map(chip).join("")}${all.length > LIMIT ? `<details class="more"><summary>+${all.length - LIMIT} more</summary>${all.slice(LIMIT).map(chip).join("")}</details>` : ""}</div>
+    <div class="small muted" style="margin-top:4px">e.g. ${esc(all[0].e.note)}</div></div>`;
 }
 function packSection(p, ids, S, items) {
   if (!ids.length) return "";
@@ -568,35 +583,114 @@ function lockedSection(ids, S, rdy) {
 }
 
 // ================================================================= CALL VIEW
-function openDrawer(html) { $("#drawer-body").innerHTML = html; $("#drawer").classList.remove("hidden"); $(".drawer-panel").scrollTop = 0; }
+function openDrawer(html) {
+  // fresh element each time so listeners from a previous call view don't pile up
+  const old = $("#drawer-body"), fresh = old.cloneNode(false);
+  old.querySelector("audio")?.pause();
+  old.replaceWith(fresh); fresh.innerHTML = html;
+  $("#drawer").classList.remove("hidden"); $(".drawer-panel").scrollTop = 0;
+}
 function closeDrawer() { const a = $("#drawer audio"); a && a.pause(); $("#drawer").classList.add("hidden"); $("#drawer-body").innerHTML = ""; }
 
-function openCallFromRun(run, itemId, focusMetric) {
+// Evidence items of one metric at (almost) the same spot are one moment for the listener: merge them.
+function mergeEvidence(evs) {
+  const out = [];
+  for (const e of evs.slice().sort((a, b) => a.start - b.start)) {
+    const last = out[out.length - 1];
+    if (last && Math.abs(e.start - last.start) < 1.0) {
+      last.end = Math.max(last.end ?? last.start, e.end ?? e.start);
+      if (!last.note.includes(e.note)) last.note += " · " + e.note;
+    } else out.push({ ...e });
+  }
+  return out;
+}
+// An "issue moment" = one timed piece of evidence from a metric that is flagged (Issue / Watch).
+function buildMoments(ids, res) {
+  const groups = [];
+  for (const id of ids) {
+    const r = res[id];
+    if (r?.status !== "ok" || !["bad", "warn"].includes(r.band)) continue;
+    const evs = (r.evidence || []).filter((e) => !e.ok);
+    const timed = mergeEvidence(evs.filter((e) => e.start != null));
+    const whole = evs.filter((e) => e.start == null);
+    const list = timed.map((e, i) => ({ key: `${id}:${i}`, metric: id, band: r.band, n: i + 1, total: timed.length,
+      start: e.start, end: Math.max(e.end ?? e.start, e.start), note: e.note }));
+    groups.push({ id, r, list, whole });
+  }
+  groups.sort((a, b) => (a.r.band === "bad" ? 0 : 1) - (b.r.band === "bad" ? 0 : 1) || b.list.length - a.list.length);
+  const moments = groups.flatMap((g) => g.list).sort((a, b) => a.start - b.start || (a.band === "bad" ? -1 : 1));
+  moments.forEach((m, i) => (m.order = i));
+  return { groups, moments };
+}
+
+function openCallFromRun(run, itemId, focusMetric, focusT) {
   const it = run.items.find((i) => i.id === itemId);
   if (!it) return;
   const rec = state.recordings.find((r) => r.id === it.recording_id) || { id: it.recording_id, name: it.recording_name, meta: {} };
   const a = it.analysis || {};
   const res = it.results || {};
   const ids = run.metric_ids;
-  const flagged = ids.filter((i) => res[i]?.status === "ok" && ["bad", "warn"].includes(res[i].band)).sort((x, y) => (res[x].band === "bad" ? 0 : 1) - (res[y].band === "bad" ? 0 : 1));
-  const rest = ids.filter((i) => !flagged.includes(i) && res[i]?.status === "ok");
+  const { groups, moments } = buildMoments(ids, res);
+  const flaggedIds = groups.map((g) => g.id);
+  const rest = ids.filter((i) => !flaggedIds.includes(i) && res[i]?.status === "ok");
   const notOk = ids.filter((i) => res[i] && res[i].status !== "ok");
+  const view = state.momentView || "issue";
   openDrawer(`
     ${callHeader(rec, `${a.transcript_source ? `Transcript: ${a.transcript_source === "faster_whisper" ? "automatic (Whisper)" : a.transcript_source}` : ""}`)}
     ${it.error ? `<div class="notice">${esc(it.error)}</div>` : ""}
-    ${a.timeline ? timelineBlock(a.timeline, rec.id) : ""}
+    ${a.timeline ? timelineBlock(a.timeline, rec.id, moments.length) : ""}
     <div class="callgrid">
-      <div class="panel">
-        ${flagged.length ? `<div class="pack-head"><h2>Needs attention</h2><span class="pill bad">${flagged.length}</span></div>${flagged.map((i) => resultBlock(i, res[i], i === focusMetric)).join("")}` : ""}
-        <div class="pack-head"><h2>Other results</h2></div>${rest.map((i) => resultBlock(i, res[i], i === focusMetric)).join("") || '<div class="pad muted">None</div>'}
-        ${notOk.length ? `<details><summary class="pad muted small" style="display:block">${notOk.length} checks not measured for this call</summary>${notOk.map((i) => resultBlock(i, res[i], false)).join("")}</details>` : ""}
+      <div>
+        <div class="panel">
+          <div class="pack-head"><h2>Issue moments</h2><span class="pill ${moments.length ? "bad" : "good"}">${moments.length}</span>
+            <span class="grow"></span>
+            <div class="seg"><button class="${view === "issue" ? "on" : ""}" data-view="issue">By issue</button><button class="${view === "time" ? "on" : ""}" data-view="time">By time</button></div></div>
+          ${moments.length || groups.some((g) => g.whole.length) ? `<div class="moments">${view === "time" ? momentsByTime(moments, groups) : momentsByIssue(groups)}</div>
+            <div class="small muted pad" style="padding-top:8px">▶ plays the moment with a few seconds of context. Keys: ← → previous/next, R replay.</div>`
+            : '<div class="pad muted">No flagged moments in this call.</div>'}
+        </div>
+        <div class="panel" style="margin-top:16px">
+          <div class="pack-head"><h2>All results</h2></div>
+          ${flaggedIds.map((i) => resultBlock(i, res[i], i === focusMetric && focusT == null)).join("")}
+          ${rest.map((i) => resultBlock(i, res[i], i === focusMetric)).join("")}
+          ${notOk.length ? `<details><summary class="pad muted small" style="display:block">${notOk.length} checks not measured for this call</summary>${notOk.map((i) => resultBlock(i, res[i], false)).join("")}</details>` : ""}
+        </div>
       </div>
-      <div class="panel"><div class="pack-head"><h2>Transcript</h2></div>${a.turns ? turnsBlock(a.turns) : '<div class="pad muted">No transcript for this evaluation.</div>'}</div>
+      <div class="panel sticky-col"><div class="pack-head"><h2>Transcript</h2></div>${a.turns ? turnsBlock(a.turns) : '<div class="pad muted">No transcript for this evaluation.</div>'}</div>
     </div>`);
   const body = $("#drawer-body");
-  if (a.timeline) bindTimeline(a.timeline, body);
+  const player = a.timeline ? bindTimeline(a.timeline, body, moments) : null;
   bindResults(body);
-  if (focusMetric) { const el = body.querySelector(`[data-result="${focusMetric}"]`); el?.scrollIntoView({ block: "center" }); }
+  body.addEventListener("click", (e) => {
+    const v = e.target.closest("[data-view]");
+    if (v) { state.momentView = v.dataset.view; return openCallFromRun(run, itemId, focusMetric); }
+  });
+  if (focusMetric && player) {
+    const m = moments.find((x) => x.metric === focusMetric && (focusT == null || Math.abs(x.start - focusT) < 0.05)) || moments.find((x) => x.metric === focusMetric);
+    if (m) { player.select(m, focusT != null); body.querySelector(`[data-mkey="${m.key}"]`)?.scrollIntoView({ block: "center" }); }
+    else body.querySelector(`[data-result="${focusMetric}"]`)?.scrollIntoView({ block: "center" });
+  }
+}
+const momentRow = (m, label) => `<div class="moment ${m.band}" data-mkey="${m.key}">
+    <button class="playbtn" data-play="${m.key}" title="Play this moment with context">▶</button>
+    <span class="mono mt">${mmss(m.start)}</span>
+    <div class="mbody">${label}<div class="mnote">${esc(m.note)}</div></div></div>`;
+function momentsByIssue(groups) {
+  return groups.map((g) => {
+    const m = M(g.id);
+    return `<div class="mgroup"><div class="mg-head"><i class="dot ${g.r.band}"></i><b>${esc(m.name)}</b>
+        <span class="val ${g.r.band}">${fmt(g.r)}</span><span class="grow"></span>
+        <span class="small muted">${g.list.length ? `${g.list.length} moment${g.list.length > 1 ? "s" : ""}` : "whole call"}</span></div>
+      ${g.list.map((x) => momentRow(x, `<span class="small muted">#${x.n} of ${x.total}</span>`)).join("")}
+      ${g.whole.map((e) => `<div class="moment whole"><span class="playbtn off">—</span><span class="mono mt">call</span><div class="mbody"><div class="mnote">${esc(e.note)}</div></div></div>`).join("")}
+    </div>`;
+  }).join("");
+}
+function momentsByTime(moments, groups) {
+  const whole = groups.flatMap((g) => g.whole.map((e) => ({ g, e })));
+  return moments.map((x) => momentRow(x, `<span class="mname"><i class="dot ${x.band}"></i>${esc(M(x.metric).name)}</span> <span class="small muted">#${x.n} of ${x.total}</span>`)).join("")
+    + (whole.length ? `<div class="mg-head small muted" style="padding-top:12px">Applies to the whole call</div>` + whole.map(({ g, e }) => `<div class="moment whole"><span class="playbtn off">—</span><span class="mono mt">call</span>
+        <div class="mbody"><span class="mname"><i class="dot ${g.r.band}"></i>${esc(M(g.id).name)}</span><div class="mnote">${esc(e.note)}</div></div></div>`).join("") : "");
 }
 function callHeader(rec, extra = "") {
   return `<div class="page-head" style="margin-bottom:14px"><div><h1>${esc(rec.name)}</h1>
@@ -611,8 +705,9 @@ function resultBlock(id, r, open) {
     <div class="result-body ${open ? "" : "hidden"}">
       ${m.target ? `<div class="small muted">Target ${esc(m.target)} · ${esc(m.formula)}</div>` : `<div class="small muted">${esc(m.formula)}</div>`}
       ${r.reason ? `<div style="margin-top:6px">${esc(r.reason)}</div>` : ""}
-      ${(r.evidence || []).length ? `<div style="margin-top:8px">${r.evidence.map((ev) => `<div class="evidence" data-seek="${ev.start ?? 0}" data-end="${ev.end ?? ev.start ?? 0}">
-          <b class="mono">${ev.start != null ? mmss(ev.start) : ""}</b> ${esc(ev.note)}</div>`).join("")}</div>` : ""}
+      ${(r.evidence || []).length ? `<div style="margin-top:8px">${r.evidence.map((ev) => ev.start != null
+          ? `<div class="evidence ${ev.ok ? "ok" : ""}" data-seek="${ev.start}" data-end="${ev.end ?? ev.start}" title="Play with context"><b class="mono">▶ ${mmss(ev.start)}</b> ${ev.ok ? "✓ " : ""}${esc(ev.note)}</div>`
+          : `<div class="evidence nolink ${ev.ok ? "ok" : ""}"><b class="mono">call</b> ${esc(ev.note)}</div>`).join("")}</div>` : ""}
       ${r.details && Object.keys(r.details).length ? `<details style="margin-top:8px"><summary class="small muted">Technical details</summary><pre class="details">${esc(JSON.stringify(r.details, null, 1))}</pre></details>` : ""}
     </div></div>`;
 }
@@ -660,43 +755,118 @@ async function openCall(recId) {
 }
 
 // ---------------------------------------------------------------- timeline + transcript
-function timelineBlock(tl, recId) {
+function timelineBlock(tl, recId, nMoments = 0) {
+  const H = nMoments ? 162 : 118;
   return `<div class="timeline-box">
-    <svg class="timeline-svg" viewBox="0 0 1000 118" preserveAspectRatio="none"></svg>
+    <svg class="timeline-svg" viewBox="0 0 1000 ${H}" preserveAspectRatio="none" style="height:${H}px"></svg>
     <div class="legend">
       <span><i style="background:var(--human)"></i>Caller</span><span><i style="background:var(--ai)"></i>AI</span>
       <span><i style="background:var(--overlap)"></i>Talking over</span><span><i style="background:var(--warn)"></i>Caller interrupts</span>
       <span><i style="background:var(--neutral-bg);border:1px solid var(--border-strong)"></i>Silence</span>
-      <span class="grow"></span><span>Click anywhere to play from there</span>
+      ${nMoments ? `<span><i style="background:var(--bad)"></i>Issue</span><span><i style="background:var(--warn)"></i>Watch</span>` : ""}
+      <span class="grow"></span><span>Click the timeline to play from there${nMoments ? " · click a marker to hear that issue" : ""}</span>
     </div>
     <audio controls preload="metadata" src="${audioUrl(recId)}"></audio>
+    ${nMoments ? `<div class="mplayer" id="mplayer">
+      <div class="mp-btns"><button class="small" data-mp="prev" title="Previous issue (←)">⏮</button><button class="small" data-mp="replay" title="Replay (R)">↺</button><button class="small" data-mp="next" title="Next issue (→)">⏭</button></div>
+      <div class="mp-info grow"><span class="muted">Pick an issue marker or ▶ to listen to exactly where it happens.</span></div>
+      <label class="small muted">Context <select data-mp="ctx"><option value="2">±2 s</option><option value="4" selected>±4 s</option><option value="8">±8 s</option><option value="15">±15 s</option></select></label>
+    </div>` : ""}
   </div>`;
 }
-function bindTimeline(tl, root) {
+function bindTimeline(tl, root, moments = []) {
   const svg = $(".timeline-svg", root), audio = $("audio", root);
   const D = tl.duration || 1, X = (t) => (t / D) * 1000, lane = { human: 16, ai: 64 };
+  const issueY = 108, axisY = moments.length ? 158 : 116;
   let h = `<text x="4" y="11" font-size="10" fill="var(--muted)">CALLER</text><text x="4" y="59" font-size="10" fill="var(--muted)">AI</text>`;
   tl.dead_air.forEach((d) => (h += `<rect x="${X(d.start)}" y="14" width="${X(d.end) - X(d.start)}" height="86" fill="var(--neutral-bg)"/>`));
+  h += `<rect class="ctx" x="0" y="10" width="0" height="${moments.length ? 128 : 94}" fill="var(--accent)" opacity=".08"/>`;
   for (const spk of ["human", "ai"]) tl.segments[spk].forEach((s) => (h += `<rect x="${X(s.start)}" y="${lane[spk]}" width="${Math.max(1.2, X(s.end) - X(s.start))}" height="34" rx="2" fill="var(--${spk})" opacity="${s.backchannel ? 0.35 : 0.9}"/>`));
   tl.overlaps.filter((o) => o.unwanted_s > 0).forEach((o) => (h += `<rect x="${X(o.start)}" y="12" width="${Math.max(1.5, X(o.end) - X(o.start))}" height="90" fill="var(--overlap)"/>`));
   tl.barge_ins.forEach((b) => (h += `<line x1="${X(b.onset)}" x2="${X(b.onset)}" y1="10" y2="104" stroke="var(--warn)" stroke-width="2"/>`));
-  h += `<rect class="hl" x="0" y="10" width="0" height="94" fill="var(--accent)" opacity=".2"/><line class="ph" x1="0" x2="0" y1="6" y2="108" stroke="var(--text)" stroke-width="1.5"/>`;
+  if (moments.length) {
+    h += `<line x1="0" x2="1000" y1="${issueY + 8}" y2="${issueY + 8}" stroke="var(--border)"/><text x="4" y="${issueY - 2}" font-size="10" fill="var(--muted)">ISSUES</text>`;
+    // stack overlapping markers into rows so every occurrence stays visible and clickable
+    const rows = [];
+    moments.forEach((m) => {
+      const x0 = X(m.start), x1 = Math.max(x0 + 7, X(m.end));
+      let row = rows.findIndex((end) => end < x0 - 1);
+      if (row < 0 || row > 2) row = rows.length < 3 ? rows.length : 2;
+      rows[row] = x1;
+      const y = issueY + 2 + row * 11 + (row ? 4 : 0);
+      h += `<g class="mk" data-mk="${m.key}"><rect x="${x0}" y="${y}" width="${x1 - x0}" height="9" rx="2" fill="var(--${m.band})"/>
+        <title>${esc(M(m.metric).name)} #${m.n} at ${mmss(m.start)} — ${esc(m.note)}</title></g>`;
+    });
+  }
+  h += `<rect class="hl" x="0" y="10" width="0" height="${moments.length ? 128 : 94}" fill="var(--accent)" opacity=".22"/><line class="ph" x1="0" x2="0" y1="6" y2="${axisY - 8}" stroke="var(--text)" stroke-width="1.5"/>`;
   const step = D > 240 ? 60 : D > 90 ? 30 : 10;
-  for (let t = 0; t < D; t += step) h += `<text x="${X(t) + 2}" y="116" font-size="9" fill="var(--muted)">${mmss(t)}</text>`;
+  for (let t = 0; t < D; t += step) h += `<text x="${X(t) + 2}" y="${axisY}" font-size="9" fill="var(--muted)">${mmss(t)}</text>`;
   svg.innerHTML = h;
-  const ph = $(".ph", svg);
+  const ph = $(".ph", svg), hl = $(".hl", svg), ctxRect = $(".ctx", svg), mp = $("#mplayer", root);
+  let clipEnd = null, current = null;
+  const ctxSec = () => +($("[data-mp=ctx]", root)?.value || 4);
+  const mark = (s, e, cs, ce) => {
+    hl.setAttribute("x", X(s)); hl.setAttribute("width", Math.max(4, X(e) - X(s)));
+    ctxRect.setAttribute("x", X(cs)); ctxRect.setAttribute("width", Math.max(0, X(ce) - X(cs)));
+  };
+  const playRange = (s, e) => {
+    const c = ctxSec(), cs = Math.max(0, s - c), ce = Math.min(D, e + c);
+    mark(s, e, cs, ce);
+    clipEnd = ce; audio.currentTime = cs; audio.play();
+    return [cs, ce];
+  };
+  const select = (m, play = true) => {
+    current = m;
+    $$(".moment", root).forEach((el) => el.classList.toggle("active", el.dataset.mkey === m.key));
+    $$(".mk", svg).forEach((el) => el.classList.toggle("active", el.dataset.mk === m.key));
+    const c = ctxSec();
+    const [cs, ce] = play ? playRange(m.start, m.end) : [Math.max(0, m.start - c), Math.min(D, m.end + c)];
+    if (!play) mark(m.start, m.end, cs, ce);
+    if (mp) $(".mp-info", mp).innerHTML = `<b><i class="dot ${m.band}"></i> ${esc(M(m.metric).name)}</b> <span class="muted">#${m.n} of ${m.total} · moment ${m.order + 1} of ${moments.length}</span>
+      <div class="small"><b class="mono">${mmss(m.start)}${m.end - m.start >= 0.5 ? "–" + mmss(m.end) : ""}</b> · playing ${mmss(cs)}–${mmss(ce)} · ${esc(m.note)}</div>`;
+  };
+  const step2 = (d) => {
+    if (!moments.length) return;
+    const i = current ? (current.order + d + moments.length) % moments.length : 0;
+    select(moments[i]);
+    root.querySelector(`[data-mkey="${moments[i].key}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
   audio.addEventListener("timeupdate", () => {
     const x = X(audio.currentTime); ph.setAttribute("x1", x); ph.setAttribute("x2", x);
+    if (clipEnd != null && audio.currentTime >= clipEnd) { audio.pause(); clipEnd = null; }
     $$(".turn", root).forEach((el) => el.classList.toggle("active", audio.currentTime >= +el.dataset.start && audio.currentTime <= +el.dataset.end));
   });
-  svg.addEventListener("click", (e) => { const r = svg.getBoundingClientRect(); audio.currentTime = ((e.clientX - r.left) / r.width) * D; audio.play(); });
+  svg.addEventListener("click", (e) => {
+    const mk = e.target.closest(".mk");
+    if (mk) { e.stopPropagation(); return select(moments.find((m) => m.key === mk.dataset.mk)); }
+    const r = svg.getBoundingClientRect(); clipEnd = null; audio.currentTime = ((e.clientX - r.left) / r.width) * D; audio.play();
+  });
   root.addEventListener("click", (e) => {
+    const pb = e.target.closest("[data-play]");
+    if (pb) return select(moments.find((m) => m.key === pb.dataset.play));
+    const btn = e.target.closest("[data-mp]");
+    if (btn && btn.tagName === "BUTTON") {
+      if (btn.dataset.mp === "prev") return step2(-1);
+      if (btn.dataset.mp === "next") return step2(1);
+      if (btn.dataset.mp === "replay") return current ? select(current) : step2(0);
+    }
     const el = e.target.closest("[data-seek]"); if (!el) return;
-    const s = +el.dataset.seek, en = +(el.dataset.end || s), hl = $(".hl", svg);
-    hl.setAttribute("x", X(s)); hl.setAttribute("width", Math.max(4, X(en) - X(s)));
-    audio.currentTime = Math.max(0, s - 0.3); audio.play();
+    const s = +el.dataset.seek, en = +(el.dataset.end || s);
+    if (el.classList.contains("turn")) { clipEnd = null; mark(s, en, s, s); audio.currentTime = Math.max(0, s - 0.2); audio.play(); }
+    else playRange(s, en);
     svg.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });
+  if (moments.length) {
+    const onKey = (e) => {
+      if (!document.body.contains(svg)) return document.removeEventListener("keydown", onKey);
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); step2(1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); step2(-1); }
+      else if (e.key.toLowerCase() === "r") current ? select(current) : step2(0);
+    };
+    document.addEventListener("keydown", onKey);
+  }
+  return { select };
 }
 function turnsBlock(turns) {
   return `<div class="turns">${turns.map((t) => `<div class="turn ${t.speaker}" data-seek="${t.start}" data-end="${t.end}" data-start="${t.start}">

@@ -7,9 +7,9 @@ real-estate-appointment,unwanted_overlap_time,ok,0.0,%,good,measured,0.0,321.644
 real-estate-appointment,premature_endpoint_rate,ok,0.0,%,good,proxy,0.0,18.0,
 real-estate-appointment,barge_in_stop_latency,not_applicable,,ms,,measured,,,No user interruptions (barge-ins) in this call
 real-estate-appointment,interruption_handling_success,not_applicable,,%,,measured,,,No user interruptions in this call
-real-estate-appointment,consent_disclosure_compliance,ok,33.3333,%,bad,proxy,1.0,3.0,
-real-estate-appointment,sensitive_data_leakage_rate,ok,0.0,%,good,proxy,0.0,21.0,
-real-estate-appointment,repetition_rate,ok,0.0,%,good,proxy,0.0,21.0,
+real-estate-appointment,consent_disclosure_compliance,ok,33.3333,%,bad,llm_judge,1.0,3.0,
+real-estate-appointment,sensitive_data_leakage_rate,not_applicable,,%,,llm_judge,,,No privacy-relevant exchanges in this call
+real-estate-appointment,repetition_rate,ok,0.0,%,good,llm_judge,0.0,21.0,
 real-estate-appointment,synthesis_artifact_rate,ok,0.0,%,good,proxy,0.0,22.0,
 real-estate-appointment,audio_dropout_rate,ok,0.0,/min,good,measured,0.0,3.5227333333333353,
 real-estate-appointment,clipping_rate,ok,0.0,%,good,measured,0.0,5387138.0,
@@ -30,9 +30,9 @@ medical-appointment,unwanted_overlap_time,ok,0.0,%,good,measured,0.0,286.7800000
 medical-appointment,premature_endpoint_rate,ok,0.0,%,good,proxy,0.0,15.0,
 medical-appointment,barge_in_stop_latency,not_applicable,,ms,,measured,,,No user interruptions (barge-ins) in this call
 medical-appointment,interruption_handling_success,not_applicable,,%,,measured,,,No user interruptions in this call
-medical-appointment,consent_disclosure_compliance,ok,33.3333,%,bad,proxy,1.0,3.0,
-medical-appointment,sensitive_data_leakage_rate,ok,0.0,%,good,proxy,0.0,16.0,
-medical-appointment,repetition_rate,ok,0.0,%,good,proxy,0.0,16.0,
+medical-appointment,consent_disclosure_compliance,ok,33.3333,%,bad,llm_judge,1.0,3.0,
+medical-appointment,sensitive_data_leakage_rate,ok,16.6667,%,bad,llm_judge,1.0,6.0,
+medical-appointment,repetition_rate,ok,12.5,%,warn,llm_judge,2.0,16.0,
 medical-appointment,synthesis_artifact_rate,ok,0.0,%,good,proxy,0.0,16.0,
 medical-appointment,audio_dropout_rate,ok,0.0,/min,good,measured,0.0,2.9226666666666645,
 medical-appointment,clipping_rate,ok,0.0,%,good,measured,0.0,4440480.0,
@@ -53,9 +53,9 @@ __ALL__,unwanted_overlap_time,ok,0.0,%,good,measured,0.0,608.424,
 __ALL__,premature_endpoint_rate,ok,0.0,%,good,proxy,0.0,33.0,
 __ALL__,barge_in_stop_latency,not_applicable,,ms,,measured,,,No user interruptions (barge-ins) in this call
 __ALL__,interruption_handling_success,not_applicable,,%,,measured,,,No user interruptions in this call
-__ALL__,consent_disclosure_compliance,ok,33.3333,%,bad,proxy,2.0,6.0,
-__ALL__,sensitive_data_leakage_rate,ok,0.0,%,good,proxy,0.0,37.0,
-__ALL__,repetition_rate,ok,0.0,%,good,proxy,0.0,37.0,
+__ALL__,consent_disclosure_compliance,ok,33.3333,%,bad,llm_judge,2.0,6.0,
+__ALL__,sensitive_data_leakage_rate,ok,16.6667,%,bad,llm_judge,1.0,6.0,
+__ALL__,repetition_rate,ok,5.4054,%,warn,llm_judge,2.0,37.0,
 __ALL__,synthesis_artifact_rate,ok,0.0,%,good,proxy,0.0,38.0,
 __ALL__,audio_dropout_rate,ok,0.0,/min,good,measured,0.0,6.445399999999999,
 __ALL__,clipping_rate,ok,0.0,%,good,measured,0.0,9827618.0,

@@ -120,23 +120,48 @@ Every empty result is classified, never shown as a bare "N/A":
 
 ---
 
-## 4. Call view — inspect one call
+## 4. Call view — hear exactly where each issue happens
+
+Every flagged check (Issue / Watch) contributes **moments**: exact timestamps in the call where the
+problem occurs. A missing disclosure is anchored to the AI's opening turns, where it should have been
+said. Problems that apply to the whole call (e.g. "never confirmed the date") are listed without a time.
 
 ```text
- ┌──────────────────────────────────────────────────────────────────────┐
- │ CALLER ▮▮  ▮      ▮▮▮        ▮       ▮▮    ← green segments         │
- │ AI       ▮▮▮▮▮ ▮▮▮    ▮▮▮▮▮▮   ▮▮▮▮▮▮▮  ▮▮▮ ← purple segments        │
- │          red = talking over · orange line = caller interrupts       │
- │ ▶ ───────────●──────────────────────────────  (click timeline = seek) │
- ├───────────────────────────────────┬──────────────────────────────────┤
- │ NEEDS ATTENTION                   │ TRANSCRIPT                       │
- │  Consent / disclosure   33% Issue │  CALLER 0:02  Hello.             │
- │   └ evidence 0:03 ai_identity     │  AI     0:03  Hi, this is Sonia… │
- │     MISSING  ← click plays 0:03   │  (current line highlights while  │
- │ OTHER RESULTS                     │   audio plays)                   │
- │ ▸ N checks not measured           │                                  │
- └───────────────────────────────────┴──────────────────────────────────┘
+ ┌────────────────────────────────────────────────────────────────────────────┐
+ │ CALLER  ▮▮  ▮      ▮▮▮        ▮       ▮▮                                    │
+ │ AI        ▮▮▮▮▮ ▮▮▮    ▮▮▮▮▮▮   ▮▮▮▮▮▮▮  ▮▮▮                                  │
+ │ ISSUES  ▬   ▬▬     ▬      ▬▬▬    ▬   ▬     ← one marker per moment (red =    │
+ │           ▬            ▬                      issue, amber = watch); stacked  │
+ │                                               when they overlap. Click = play │
+ │ 0:00          0:30          1:00          1:30                               │
+ │ ▶ ───────●─────────────────────────────────────                              │
+ │ ⏮ ↺ ⏭   Turnaround time · #2 of 5 · moment 4 of 14     Context [±4 s ▾]      │
+ │          0:42–0:45 · playing 0:38–0:49 · Caller waited 2.50 s for the reply  │
+ ├───────────────────────────────────────┬────────────────────────────────────┤
+ │ ISSUE MOMENTS (14)  [By issue|By time]│ TRANSCRIPT                         │
+ │ ● Turnaround time  1.38 s   5 moments │  CALLER 0:02  Hello.               │
+ │   ▶ 0:09  #1 of 5  Caller waited 2.5 s│  AI     0:03  Hi, this is …        │
+ │   ▶ 0:42  #2 of 5  …                  │  (line highlights while playing)   │
+ │ ● Consent / disclosure  33%  1 moment │                                    │
+ │   ▶ 0:03  ai identity: MISSING — …    │                                    │
+ │ ALL RESULTS (expand for formula,      │                                    │
+ │ every evidence item, details)         │                                    │
+ └───────────────────────────────────────┴────────────────────────────────────┘
 ```
+
+How to listen:
+
+| Action | Result |
+|---|---|
+| ▶ next to a moment, or click a marker on the ISSUES lane | Plays from *context* seconds before the moment to *context* seconds after, then stops. The exact moment is highlighted on the timeline, the surrounding context is shaded |
+| ⏮ / ⏭ (or ← / → keys) | Previous / next issue moment in call order, across all checks |
+| ↺ (or R) | Replay the current moment |
+| Context ±2 / 4 / 8 / 15 s | How much surrounding audio to include |
+| *By issue* / *By time* | Moments grouped per check (#1 of 5, #2 of 5 …), or as one chronological list |
+| Click a transcript line | Play from that line |
+
+On the **report**, each key finding lists its moments across all calls as ▶ time chips (e.g.
+`▶ medical 0:09`). A chip opens that call and plays that moment immediately.
 
 ---
 

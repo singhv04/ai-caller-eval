@@ -31,13 +31,14 @@ class TurnTakingAppropriateness(Metric):
             good = (not r["overlapped"]) and r["gap_ms"] <= p.max_response_gap_s * 1000
             appropriate += good
             if not good:
-                why = "AI started before the user finished" if r["overlapped"] else f"slow reply {r['gap_ms']:.0f} ms"
+                why = ("AI started talking before the caller had finished" if r["overlapped"]
+                       else f"Slow reply: caller waited {r['gap_ms'] / 1000:.2f} s")
                 evidence.append(ev(r["human_end"], r["ai_start"], why))
         for b in tl.barge_ins:
             total += 1
             appropriate += b["stopped"]
             if not b["stopped"]:
-                evidence.append(ev(b["onset"], b["ai_stop"], "AI kept talking through interruption"))
+                evidence.append(ev(b["onset"], b["ai_stop"], f"Caller interrupted but the AI kept talking for {b['stop_latency_ms'] / 1000:.1f} s"))
         return self.ratio(appropriate, total, method="proxy", evidence=evidence)
 
 
@@ -64,7 +65,9 @@ class UnwantedOverlapTime(Metric):
         return self.ratio(total_unwanted, span, details={
             "unwanted_overlap_s": round(total_unwanted, 2), "conversation_s": round(span, 2),
             "all_overlap_s": round(sum(o["end"] - o["start"] for o in tl.overlaps), 2)},
-            evidence=[ev(o["start"], o["end"], o["kind"]) for o in unwanted])
+            evidence=[ev(o["start"], o["end"], {"ai_talk_over": f"AI talked over the caller ({o['end'] - o['start']:.1f} s overlap)",
+                                                "barge_in": f"AI kept talking {o['unwanted_s']:.1f} s after the caller cut in"}.get(o["kind"], o["kind"]))
+                      for o in unwanted])
 
 
 @register

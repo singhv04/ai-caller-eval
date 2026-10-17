@@ -37,7 +37,9 @@ class TaskCompletion(Metric):
         goals = j["user_goals"]
         res = self.ratio(sum(g["completed"] for g in goals), len(goals), method="llm_judge",
                          details={"outcome": j["outcome"], "goals": goals},
-                         evidence=[{**ctx.turn_span(g["turn"]), "note": f"{'✓' if g['completed'] else '✗'} {g['goal']}"} for g in goals])
+                         evidence=[{**ctx.turn_span(g["turn"]), "note": f"{'✓' if g['completed'] else '✗ Not achieved:'} {g['goal']}"
+                                    + ("" if g["completed"] else f" — {g['explanation']}"), **({"ok": True} if g["completed"] else {})}
+                                   for g in goals])
         res.details["outcome"] = j["outcome"]
         return res
 
@@ -221,7 +223,8 @@ class RepairSuccess(Metric):
         mx = int(ctx.profile.get("dialogue.max_repair_turns", 3))
         okc = [i for i in items if i["recovered"] and i["turns_to_recover"] <= mx]
         return self.ratio(len(okc), len(items), method="llm_judge",
-                          evidence=[{**ctx.turn_span(i["turn"]), "note": f"{'recovered' if i in okc else 'NOT recovered'}: {i['description']}"} for i in items])
+                          evidence=[{**ctx.turn_span(i["turn"]), "note": f"{'Recovered' if i in okc else 'Not recovered'}: {i['description']}",
+                                     **({"ok": True} if i in okc else {})} for i in items])
 
 
 @register

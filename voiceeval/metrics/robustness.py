@@ -173,6 +173,6 @@ class NetworkRecovery(Metric):
             after = [t for t in tl.turns if t.start >= e - 0.1]
             ok = any(t.speaker == "ai" for t in after) and any(t.speaker == "human" for t in after)
             resumed += ok
-            evidence.append(ev(s, e, "resumed" if ok else "did not resume"))
+            evidence.append(ev(s, e, f"{e - s:.1f} s of silence on both sides; conversation " + ("resumed" if ok else "did not resume"), ok=ok))
         return self.ratio(int(resumed > 0 and resumed == len(gaps)), 1, method=method, evidence=evidence,
                           details={"interruptions": len(gaps), "resumed": resumed})

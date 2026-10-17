@@ -45,8 +45,10 @@ class TurnaroundTime(Metric):
         samples = [r["gap_ms"] for r in gaps]
         value, details = self.summarize_samples(samples)
         details["p95_target_met"] = details["p95_ms"] < 1500
-        evidence = [ev(r["human_end"], r["ai_start"], f"{r['gap_ms']:.0f} ms") for r in
-                    sorted(gaps, key=lambda r: -r["gap_ms"])[:5]]
+        good, _ = self.thresholds(ctx.profile)
+        # every response slower than target, in call order: each one is a moment the caller waited
+        evidence = [ev(r["human_end"], r["ai_start"], f"Caller waited {r['gap_ms'] / 1000:.2f} s for the AI to reply")
+                    for r in gaps if good is None or r["gap_ms"] > good]
         return self.ok(value, samples=samples, details=details, evidence=evidence)
 
 
@@ -138,7 +140,7 @@ class PrematureEndpointRate(Metric):
         n = len(tl.turns_of("human"))
         pe = tl.premature_endpoints
         return self.ratio(len(pe), n, method="proxy",
-                          evidence=[ev(p["ai_onset"], p["user_resumed_at"], f"user pause {p['user_pause_ms']:.0f} ms")
+                          evidence=[ev(p["ai_onset"], p["user_resumed_at"], f"AI jumped in during a {p['user_pause_ms'] / 1000:.1f} s pause; the caller was still talking")
                                     for p in pe],
                           details={"events": pe})
 
@@ -198,8 +200,12 @@ class BargeInStopLatency(Metric):
         samples = [x["stop_latency_ms"] for x in b]
         v, d = self.summarize_samples(samples)
         d["did_not_stop"] = sum(not x["stopped"] for x in b)
+        good, _ = self.thresholds(ctx.profile)
         return self.ok(v, samples=samples, details=d,
-                       evidence=[ev(x["onset"], x["ai_stop"], f"AI stopped after {x['stop_latency_ms']:.0f} ms") for x in b])
+                       evidence=[ev(x["onset"], x["ai_stop"],
+                                    f"Caller interrupted; AI kept talking for {x['stop_latency_ms'] / 1000:.2f} s"
+                                    if x["stop_latency_ms"] > (good or 0) else f"AI stopped after {x['stop_latency_ms']:.0f} ms",
+                                    ok=good is not None and x["stop_latency_ms"] <= good) for x in b])
 
 
 @register
@@ -257,7 +263,9 @@ class InterruptionHandlingSuccess(Metric):
             return self.na("No user interruptions in this call", kind="not_occurred")
         okc = [x for x in b if x["stopped"] and x["ai_responded"]]
         return self.ratio(len(okc), len(b), method="proxy",
-                          evidence=[ev(x["onset"], x["ai_stop"], "handled" if x in okc else "NOT handled") for x in b])
+                          evidence=[ev(x["onset"], x["ai_stop"], "Interruption handled" if x in okc else
+                                       ("AI did not stop when interrupted" if not x["stopped"] else "AI stopped but never responded"),
+                                       ok=x in okc) for x in b])
 
 
 @register
@@ -277,4 +285,4 @@ class UnwantedOverlapTurns(Metric):
         tl = ctx.timeline
         ints = tl.ai_interruptions
         return self.ratio(len(ints), len(tl.turns),
-                          evidence=[ev(i["onset"], i["human_segment_end"], "AI started over the user") for i in ints])
+                          evidence=[ev(i["onset"], i["human_segment_end"], f"AI started talking while the caller was still speaking ({i['overlap_ms'] / 1000:.1f} s overlap)") for i in ints])
